@@ -4,18 +4,15 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 
-import {
-    BaseStrategy,
-    StrategyParams
-} from "../BaseStrategy.sol";
-import { SafeERC20, SafeMath, IERC20, Address } from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {BaseStrategy, StrategyParams} from "../BaseStrategy.sol";
+import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
-import './SwapperLife.sol';
+import "./SwapperLife.sol";
 
-import "../interfaces/joe/Ijoetroller.sol";
-import "../interfaces/joe/IJToken.sol";
-import "../interfaces/joe/JTokenI.sol";
-import "../interfaces/joe/IJoeRewarder.sol";
+import "../interfaces/Joe/IJoetroller.sol";
+import "../interfaces/Joe/IJToken.sol";
+import "../interfaces/Joe/JTokenI.sol";
+import "../interfaces/Joe/IJoeRewarder.sol";
 import "../interfaces/Uni/IUniswapV2Router02.sol";
 import "../interfaces/IERC20Extended.sol";
 
@@ -42,20 +39,20 @@ contract SingleJoe is BaseStrategy, SwapperLife {
     bool public forceMigrate;
 
     constructor(
-        address _vault, 
-        address _JToken, 
-        address _router, 
-        address _joe, 
+        address _vault,
+        address _JToken,
+        address _router,
+        address _joe,
         address _joetroller
     ) public BaseStrategy(_vault) {
         _initializeThis(_JToken, _router, _joe, _joetroller);
     }
 
     function initialize(
-        address _vault, 
-        address _JToken, 
-        address _router, 
-        address _joe, 
+        address _vault,
+        address _JToken,
+        address _router,
+        address _joe,
         address _joetroller
     ) external {
         _initialize(_vault, msg.sender, msg.sender, msg.sender);
@@ -63,9 +60,9 @@ contract SingleJoe is BaseStrategy, SwapperLife {
     }
 
     function _initializeThis(
-        address _JToken, 
-        address _router, 
-        address _joe, 
+        address _JToken,
+        address _router,
+        address _joe,
         address _joetroller
     ) internal {
         setJToken(_JToken);
@@ -93,13 +90,13 @@ contract SingleJoe is BaseStrategy, SwapperLife {
 
         uint256 _allowance = want.allowance(address(this), address(JToken));
         want.safeDecreaseAllowance(address(JToken), _allowance);
-        
+
         setJToken(_JToken);
     }
 
     function setJToken(address _pool) internal {
         JToken = IJToken(_pool);
-        
+
         want.safeApprove(_pool, type(uint256).max);
     }
 
@@ -153,13 +150,13 @@ contract SingleJoe is BaseStrategy, SwapperLife {
 
         //MAY NEEED to call reward distributor not joetroller
         uint256 rewardSupplyRate = joeRewarder.rewardSupplySpeeds(0, address(JToken));
-     
+
         //total supply needs to be echanged to underlying using exchange rate
         uint256 totalSupply = JToken.totalSupply();
-       
+
         //Rate * (Deposits / supply)
         uint256 blockShare = rewardSupplyRate.mul(balance).div(totalSupply);
-    
+
         //last time we ran harvest
         uint256 timeSinceLast = block.timestamp.sub(lastHarvest);
 
@@ -178,15 +175,15 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         return JToken.balanceOf(address(this)).mul(JToken.exchangeRateCurrent()).div(1e18);
     }
 
-    function getBalanceOfUnderlying() external returns(uint256) {
+    function getBalanceOfUnderlying() external returns (uint256) {
         return JToken.balanceOfUnderlying(address(this));
     }
 
-    function exchnageRate() external returns (uint256 ) {
+    function exchnageRate() external returns (uint256) {
         return JToken.exchangeRateCurrent();
     }
 
-    function updateJoe() public returns(uint256) {
+    function updateJoe() public returns (uint256) {
         JToken.exchangeRateCurrent();
     }
 
@@ -199,7 +196,7 @@ contract SingleJoe is BaseStrategy, SwapperLife {
             uint256 _debtPayment
         )
     {
-         _profit = 0;
+        _profit = 0;
         _loss = 0; // for clarity. also reduces bytesize
         _debtPayment = 0;
 
@@ -277,16 +274,11 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         depositSome(toInvest);
     }
 
-    function liquidatePosition(uint256 _amountNeeded)
-        internal
-        override
-        returns (uint256 _liquidatedAmount, uint256 _loss)
-    {
+    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss) {
         //check what we have available
         uint256 wantBalance = balanceOfToken(address(want));
         updateJoe();
         if (_amountNeeded > wantBalance) {
-            
             uint256 amountToFree = _amountNeeded.sub(wantBalance);
 
             withdrawSome(amountToFree);
@@ -295,7 +287,6 @@ contract SingleJoe is BaseStrategy, SwapperLife {
 
             //if we need more than avaialble find out how much
             if (_amountNeeded > wantBalance) {
-                
                 harvestJoe();
                 disposeOfJoe();
                 wantBalance = balanceOfToken(address(want));
@@ -307,7 +298,6 @@ contract SingleJoe is BaseStrategy, SwapperLife {
                     _liquidatedAmount = wantBalance;
                     _loss = _amountNeeded.sub(wantBalance);
                 }
-            
             } else {
                 _liquidatedAmount = _amountNeeded;
             }
@@ -336,7 +326,7 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         //should have already called LivePosition()
         uint256 deposited = getCurrentPosition();
 
-        if(_amountNeeded > deposited) {
+        if (_amountNeeded > deposited) {
             JToken.redeem(JToken.balanceOf(address(this)));
         } else {
             JToken.redeemUnderlying(_amountNeeded);
@@ -348,13 +338,13 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         if (predictjoeAccrued() < minJoe) {
             return;
         }
-        
+
         JTokenI[] memory tokens = new JTokenI[](1);
         address[] memory addresses = new address[](1);
         tokens[0] = JTokenI(address(JToken));
         addresses[0] = payable(address(this));
 
-        joetroller.claimReward(0, addresses, tokens, false, true );
+        joetroller.claimReward(0, addresses, tokens, false, true);
         lastHarvest = block.timestamp;
     }
 
@@ -379,12 +369,7 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         JToken.transfer(_newStrategy, JToken.balanceOf(address(this)));
     }
 
-    function protectedTokens()
-        internal
-        view
-        override
-        returns (address[] memory)
-    {
+    function protectedTokens() internal view override returns (address[] memory) {
         address[] memory protected = new address[](2);
         protected[0] = address(JToken);
         protected[1] = Joe;
@@ -392,13 +377,7 @@ contract SingleJoe is BaseStrategy, SwapperLife {
         return protected;
     }
 
-    function ethToWant(uint256 _amtInWei)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
         return _checkPrice(wavax, address(want), _amtInWei);
     }
 }

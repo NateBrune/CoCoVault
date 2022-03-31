@@ -27,7 +27,7 @@ interface IStargateGauge {
         uint256 accStargatePerShare; // Accumulated STGs per share, times 1e12. See below.
     }
     // The STG TOKEN!
-    StargateToken public stargate;
+    address public stargate;
     // Block number when bonus STG period ends.
     uint256 public bonusEndBlock;
     // STG tokens created per block.
@@ -46,13 +46,13 @@ interface IStargateGauge {
     // The block number when STG mining starts.
     uint256 public startBlock;
 
-    function deposit(uint256 _pid, uint256 _amount) public;
+    function deposit(uint256 _pid, uint256 _amount) external;
 
-    function withdraw(uint256 _pid, uint256 _amount) public;
+    function withdraw(uint256 _pid, uint256 _amount) external;
 
     /// @notice Withdraw without caring about rewards.
     /// @param _pid The pid specifies the pool
-    function emergencyWithdraw(uint256 _pid) public;
+    function emergencyWithdraw(uint256 _pid) external;
 
     function pendingStargate(uint256 _pid, address _user) external view returns (uint256);
 

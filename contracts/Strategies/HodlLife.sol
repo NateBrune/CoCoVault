@@ -12,9 +12,9 @@ import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/toke
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
-import '../interfaces/curve/ICurveFi.sol';
-import '../interfaces/curve/IGauge.sol';
-import '../interfaces/uni/IUniswapV2Router02.sol';
+import "../interfaces/Curve/ICurveFi.sol";
+import "../interfaces/Curve/IGauge.sol";
+import "../interfaces/Uni/IUniswapV2Router02.sol";
 
 interface IERC20Extended is IERC20 {
     function decimals() external view returns (uint8);
@@ -50,8 +50,8 @@ contract HodlLife is BaseStrategy {
     uint256 minWmatic;
 
     constructor(
-        address _vault, 
-        address _pool, 
+        address _vault,
+        address _pool,
         address _gauge,
         address _router
     ) public BaseStrategy(_vault) {
@@ -89,9 +89,11 @@ contract HodlLife is BaseStrategy {
     function updateMaxSingleInvest(uint256 _maxSingleInvest) public onlyAuthorized {
         maxSingleInvest = _maxSingleInvest;
     }
+
     function updateSlippageProtectionIn(uint256 _slippageProtectionIn) public onlyAuthorized {
         slippageProtectionIn = _slippageProtectionIn;
     }
+
     function updateSlippageProtectionOut(uint256 _slippageProtectionOut) public onlyAuthorized {
         slippageProtectionOut = _slippageProtectionOut;
     }
@@ -107,7 +109,7 @@ contract HodlLife is BaseStrategy {
         return IERC20(_token).balanceOf(address(this));
     }
 
-    function toWant(uint256 _lpBalance) public view returns(uint256) {
+    function toWant(uint256 _lpBalance) public view returns (uint256) {
         return _lpBalance.mul(pool.get_virtual_price()).div(1e28);
     }
 
@@ -119,7 +121,7 @@ contract HodlLife is BaseStrategy {
     function lpBalance() public view returns (uint256) {
         return gauge.balanceOf(address(this)).add(balanceOfToken(btcCrv));
     }
- 
+
     function estimatedTotalAssets() public view override returns (uint256) {
         uint256 wantBalance = balanceOfToken(address(want));
 
@@ -141,11 +143,11 @@ contract HodlLife is BaseStrategy {
         return _bal.mul(90).div(100);
     }
 
-    function predictCrvAccrued() public view returns(uint256) {
+    function predictCrvAccrued() public view returns (uint256) {
         return gauge.claimable_reward(address(this), crv);
     }
 
-    function predictWmaticAccrued() public view returns(uint256) {
+    function predictWmaticAccrued() public view returns (uint256) {
         return gauge.claimable_reward(address(this), wmatic);
     }
 
@@ -176,7 +178,7 @@ contract HodlLife is BaseStrategy {
 
         //claim rewards
         harvester();
-    
+
         //get base want balance
         uint256 wantBalance = balanceOfToken(address(want));
 
@@ -228,7 +230,7 @@ contract HodlLife is BaseStrategy {
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
-       if (emergencyExit) {
+        if (emergencyExit) {
             return;
         }
 
@@ -248,11 +250,7 @@ contract HodlLife is BaseStrategy {
         depositSome(_wantToInvest);
     }
 
-   function liquidatePosition(uint256 _amountNeeded)
-        internal
-        override
-        returns (uint256 _liquidatedAmount, uint256 _loss)
-    {
+    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss) {
         // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
         // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
         uint256 wantBalance = balanceOfToken(address(want));
@@ -277,45 +275,44 @@ contract HodlLife is BaseStrategy {
         }
     }
 
-
     function depositSome(uint256 _amount) internal {
-        if(_amount < minWant) {
+        if (_amount < minWant) {
             return;
         }
 
         uint256 expectedOut = toShares(_amount);
-        
+
         uint256 maxSlip = expectedOut.mul(DENOMINATOR.sub(slippageProtectionIn)).div(DENOMINATOR);
-    
-        uint256[2] memory amounts; 
+
+        uint256[2] memory amounts;
         amounts[0] = _amount;
-                  
+
         pool.add_liquidity(amounts, maxSlip, true);
 
         gauge.deposit(balanceOfToken(btcCrv));
     }
 
     function withdrawSome(uint256 _amount) internal {
-        if(_amount < minWant) {
+        if (_amount < minWant) {
             return;
         }
 
         //let's take the amount we need if virtual price is real.
         uint256 amountNeeded = toShares(_amount);
 
-        if(amountNeeded > gauge.balanceOf(address(this))) {
+        if (amountNeeded > gauge.balanceOf(address(this))) {
             harvester();
-            amountNeeded =  gauge.balanceOf(address(this));
+            amountNeeded = gauge.balanceOf(address(this));
         }
 
         gauge.withdraw(amountNeeded);
-        
+
         uint256 toWithdraw = balanceOfToken(btcCrv);
 
         //if we have less than 18 decimals we need to lower the amount out
         uint256 maxSlippage = toWithdraw.mul(DENOMINATOR.sub(slippageProtectionOut)).div(DENOMINATOR);
-        if(want_decimals < 18){
-            maxSlippage = maxSlippage.div(10 ** (uint256(uint8(18) - want_decimals)));
+        if (want_decimals < 18) {
+            maxSlippage = maxSlippage.div(10**(uint256(uint8(18) - want_decimals)));
         }
 
         pool.remove_liquidity_one_coin(toWithdraw, 0, maxSlippage, true);
@@ -329,7 +326,7 @@ contract HodlLife is BaseStrategy {
 
     function disposeCrv() internal {
         uint256 _crv = balanceOfToken(crv);
-        if(_crv < minCrv) {
+        if (_crv < minCrv) {
             return;
         }
 
@@ -338,7 +335,7 @@ contract HodlLife is BaseStrategy {
 
     function disposeWmatic() internal {
         uint256 _Wmatic = balanceOfToken(wmatic);
-        if(_Wmatic < minWmatic) {
+        if (_Wmatic < minWmatic) {
             return;
         }
 
@@ -354,7 +351,7 @@ contract HodlLife is BaseStrategy {
         if (_amount == 0) {
             return 0;
         }
-        
+
         //uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
         uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
 
@@ -362,20 +359,32 @@ contract HodlLife is BaseStrategy {
     }
 
     //need to go from PTP to AVAX to USDC.e
-    function _swapFromWithAmount(address _from, address _to, uint256 _amountIn, uint256 _amountOut) internal returns (uint256) {
-
+    function _swapFromWithAmount(
+        address _from,
+        address _to,
+        uint256 _amountIn,
+        uint256 _amountOut
+    ) internal returns (uint256) {
         IERC20(_from).approve(address(router), _amountIn);
-        
+
         uint256[] memory amounts = router.swapExactTokensForTokens(
-            _amountIn, _amountOut, getTokenOutPath(_from, _to), address(this), block.timestamp);
+            _amountIn,
+            _amountOut,
+            getTokenOutPath(_from, _to),
+            address(this),
+            block.timestamp
+        );
 
         return amounts[amounts.length - 1];
     }
 
-    function _swapFrom(address _from, address _to, uint256 _amountIn) internal returns(uint256){
-
+    function _swapFrom(
+        address _from,
+        address _to,
+        uint256 _amountIn
+    ) internal returns (uint256) {
         uint256 amountOut = _checkPrice(_from, _to, _amountIn);
-        
+
         return _swapFromWithAmount(_from, _to, _amountIn, amountOut);
     }
 
@@ -411,35 +420,23 @@ contract HodlLife is BaseStrategy {
         }
 
         IERC20(btcCrv).transfer(_newStrategy, balanceOfToken(btcCrv));
-
     }
 
-    function protectedTokens()
-        internal
-        view
-        override
-        returns (address[] memory)
-    {
+    function protectedTokens() internal view override returns (address[] memory) {
         address[] memory protected = new address[](3);
         protected[0] = btcCrv;
         protected[1] = crv;
         protected[2] = wmatic;
-        
+
         return protected;
     }
 
-    function ethToWant(uint256 _amtInWei)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
         return _checkPrice(wmatic, address(want), _amtInWei);
     }
 
     //manual withdraw incase needed
-     //Decimal issue wont withdraw any funds unles greater than 1000000000 == 1 wbtc
+    //Decimal issue wont withdraw any funds unles greater than 1000000000 == 1 wbtc
     function manualWithdraw(uint256 _amount) external onlyStrategist {
         pool.remove_liquidity_one_coin(_amount, 0, 1, true);
     }

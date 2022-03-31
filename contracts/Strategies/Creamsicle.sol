@@ -4,16 +4,13 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 
-import {
-    BaseStrategy,
-    StrategyParams
-} from "../BaseStrategy.sol";
-import { SafeERC20, SafeMath, IERC20, Address } from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {BaseStrategy, StrategyParams} from "../BaseStrategy.sol";
+import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 
-import "../interfaces/joe/Ijoetroller.sol";
-import "../interfaces/joe/IJToken.sol";
-import "../interfaces/uni/IUniswapV2Router02.sol";
+import "../interfaces/Joe/IJoetroller.sol";
+import "../interfaces/Joe/IJToken.sol";
+import "../interfaces/Uni/IUniswapV2Router02.sol";
 
 interface IERC20Extended is IERC20 {
     function decimals() external view returns (uint8);
@@ -23,7 +20,7 @@ interface IERC20Extended is IERC20 {
     function symbol() external view returns (string memory);
 }
 
-contract Creamsicle is BaseStrategy{
+contract Creamsicle is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
@@ -41,8 +38,8 @@ contract Creamsicle is BaseStrategy{
     bool public forceMigrate;
 
     constructor(
-        address _vault, 
-        address _JToken, 
+        address _vault,
+        address _JToken,
         address _troller,
         address _router
     ) public BaseStrategy(_vault) {
@@ -50,8 +47,8 @@ contract Creamsicle is BaseStrategy{
     }
 
     function initialize(
-        address _vault, 
-        address _JToken, 
+        address _vault,
+        address _JToken,
         address _troller,
         address _router
     ) external {
@@ -60,7 +57,7 @@ contract Creamsicle is BaseStrategy{
     }
 
     function _initializeThis(
-        address _JToken, 
+        address _JToken,
         address _troller,
         address _router
     ) internal {
@@ -86,13 +83,13 @@ contract Creamsicle is BaseStrategy{
 
         uint256 _allowance = want.allowance(address(this), address(JToken));
         want.safeDecreaseAllowance(address(JToken), _allowance);
-        
+
         setJToken(_JToken);
     }
 
     function setJToken(address _pool) internal {
         JToken = IJToken(_pool);
-        
+
         want.safeApprove(_pool, type(uint256).max);
     }
 
@@ -122,15 +119,15 @@ contract Creamsicle is BaseStrategy{
         return JToken.balanceOf(address(this)).mul(JToken.exchangeRateCurrent()).div(1e18);
     }
 
-    function getBalanceOfUnderlying() external returns(uint256) {
+    function getBalanceOfUnderlying() external returns (uint256) {
         return JToken.balanceOfUnderlying(address(this));
     }
 
-    function exchnageRate() external returns (uint256 ) {
+    function exchnageRate() external returns (uint256) {
         return JToken.exchangeRateCurrent();
     }
 
-    function updateJoe() public returns(uint256) {
+    function updateJoe() public returns (uint256) {
         JToken.exchangeRateCurrent();
     }
 
@@ -154,7 +151,7 @@ contract Creamsicle is BaseStrategy{
             uint256 _debtPayment
         )
     {
-         _profit = 0;
+        _profit = 0;
         _loss = 0; // for clarity. also reduces bytesize
         _debtPayment = 0;
 
@@ -226,11 +223,7 @@ contract Creamsicle is BaseStrategy{
         depositSome(toInvest);
     }
 
-    function liquidatePosition(uint256 _amountNeeded)
-        internal
-        override
-        returns (uint256 _liquidatedAmount, uint256 _loss)
-    {
+    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss) {
         // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
         // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
         uint256 wantBalance = balanceOfToken(address(want));
@@ -271,7 +264,7 @@ contract Creamsicle is BaseStrategy{
         //should have already called LivePosition()
         uint256 deposited = getCurrentPosition();
 
-        if(_amountNeeded > deposited) {
+        if (_amountNeeded > deposited) {
             JToken.redeem(JToken.balanceOf(address(this)));
         } else {
             JToken.redeemUnderlying(_amountNeeded);
@@ -291,7 +284,7 @@ contract Creamsicle is BaseStrategy{
         if (_amount == 0) {
             return 0;
         }
-        
+
         //uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
         uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
 
@@ -311,25 +304,14 @@ contract Creamsicle is BaseStrategy{
         }
     }
 
-    function protectedTokens()
-        internal
-        view
-        override
-        returns (address[] memory)
-    {
+    function protectedTokens() internal view override returns (address[] memory) {
         address[] memory protected = new address[](1);
         protected[0] = address(JToken);
 
         return protected;
     }
 
-    function ethToWant(uint256 _amtInWei)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
         return _checkPrice(wmatic, address(want), _amtInWei);
     }
 }

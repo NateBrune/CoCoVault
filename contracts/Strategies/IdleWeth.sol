@@ -4,15 +4,12 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 
-import {
-    BaseStrategy,
-    StrategyParams
-} from "../BaseStrategy.sol";
-import { SafeERC20, SafeMath, IERC20, Address } from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {BaseStrategy, StrategyParams} from "../BaseStrategy.sol";
+import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 
-import "../interfaces/idle/IdleToken.sol";
-import "../interfaces/uni/IUniswapV2Router02.sol";
+import "../interfaces/Idle/IdleToken.sol";
+import "../interfaces/Uni/IUniswapV2Router02.sol";
 
 interface IERC20Extended is IERC20 {
     function decimals() external view returns (uint8);
@@ -22,16 +19,16 @@ interface IERC20Extended is IERC20 {
     function symbol() external view returns (string memory);
 }
 
-contract IdleWeth is BaseStrategy{
+contract IdleWeth is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
 
     // Comptroller address for joetroller.finance
-    
+
     IUniswapV2Router02 public router;
     IdleToken idleToken;
-    
+
     address public constant wmatic = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
 
     uint256 public minWant; // minimum amount of want to act on
@@ -39,26 +36,23 @@ contract IdleWeth is BaseStrategy{
     bool public forceMigrate;
 
     constructor(
-        address _vault, 
-        address _token, 
+        address _vault,
+        address _token,
         address _router
     ) public BaseStrategy(_vault) {
         _initializeThis(_token, _router);
     }
 
     function initialize(
-        address _vault, 
-        address _token, 
+        address _vault,
+        address _token,
         address _router
     ) external {
         _initialize(_vault, msg.sender, msg.sender, msg.sender);
         _initializeThis(_token, _router);
     }
 
-    function _initializeThis(
-        address _token, 
-        address _router
-    ) internal {
+    function _initializeThis(address _token, address _router) internal {
         setIdleToken(_token);
         router = IUniswapV2Router02(_router);
         require(IERC20Extended(address(want)).decimals() <= 18); // dev: want not supported
@@ -80,13 +74,13 @@ contract IdleWeth is BaseStrategy{
 
         uint256 _allowance = want.allowance(address(this), address(idleToken));
         want.safeDecreaseAllowance(address(idleToken), _allowance);
-        
+
         setIdleToken(_token);
     }
 
     function setIdleToken(address _pool) internal {
         idleToken = IdleToken(_pool);
-        
+
         want.safeApprove(_pool, type(uint256).max);
     }
 
@@ -115,7 +109,7 @@ contract IdleWeth is BaseStrategy{
         return idleToken.balanceOf(address(this)).mul(idleToken.tokenPriceWithFee(address(this))).div(1e18);
     }
 
-    function toShares(uint256 _amount) internal view returns(uint256) {
+    function toShares(uint256 _amount) internal view returns (uint256) {
         //lpAmount = (UnderlyingAmount * 1e(18 + (18 - UInderlyingDecimals))) / virtualPrice
         return _amount.mul(1e18).div(idleToken.tokenPriceWithFee(address(this)));
     }
@@ -140,7 +134,7 @@ contract IdleWeth is BaseStrategy{
             uint256 _debtPayment
         )
     {
-         _profit = 0;
+        _profit = 0;
         _loss = 0; // for clarity. also reduces bytesize
         _debtPayment = 0;
 
@@ -212,11 +206,7 @@ contract IdleWeth is BaseStrategy{
         depositSome(toInvest);
     }
 
-    function liquidatePosition(uint256 _amountNeeded)
-        internal
-        override
-        returns (uint256 _liquidatedAmount, uint256 _loss)
-    {
+    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss) {
         // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
         // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
         uint256 wantBalance = balanceOfToken(address(want));
@@ -253,7 +243,7 @@ contract IdleWeth is BaseStrategy{
         //should have already called LivePosition()
         uint256 deposited = getCurrentPosition();
 
-        if(_amountNeeded > deposited) {
+        if (_amountNeeded > deposited) {
             idleToken.redeemIdleToken(idleToken.balanceOf(address(this)));
         } else {
             idleToken.redeemIdleToken(toShares(_amountNeeded));
@@ -277,7 +267,7 @@ contract IdleWeth is BaseStrategy{
         if (_amount == 0) {
             return 0;
         }
-        
+
         //uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
         uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
 
@@ -297,25 +287,14 @@ contract IdleWeth is BaseStrategy{
         }
     }
 
-    function protectedTokens()
-        internal
-        view
-        override
-        returns (address[] memory)
-    {
+    function protectedTokens() internal view override returns (address[] memory) {
         address[] memory protected = new address[](1);
         protected[0] = address(idleToken);
 
         return protected;
     }
 
-    function ethToWant(uint256 _amtInWei)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
+    function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
         return _checkPrice(wmatic, address(want), _amtInWei);
     }
 }

@@ -4,18 +4,14 @@ pragma experimental ABIEncoderV2;
 
 // These are the core Yearn libraries
 
-import {
-    BaseStrategy,
-    StrategyParams
-} from "../BaseStrategy.sol";
-import { SafeERC20, SafeMath, IERC20, Address } from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {BaseStrategy, StrategyParams} from "../BaseStrategy.sol";
+import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 
-import "../interfaces/joe/IJoetroller.sol";
-import "../interfaces/joe/IJToken.sol";
+import "../interfaces/Joe/IJoetroller.sol";
+import "../interfaces/Joe/IJToken.sol";
 import "../interfaces/Uni/IUniswapV2Router02.sol";
 import "../interfaces/IERC20Extended.sol";
-
 
 contract JoeFoSho is BaseStrategy {
     using SafeERC20 for IERC20;
@@ -47,11 +43,11 @@ contract JoeFoSho is BaseStrategy {
     bool public withdrawChecks;
 
     constructor(
-        address _vault, 
-        address _JToken, 
-        address _router, 
-        address _joe, 
-        address _joetroller, 
+        address _vault,
+        address _JToken,
+        address _router,
+        address _joe,
+        address _joetroller,
         address _weth
     ) public BaseStrategy(_vault) {
         _initializeThis(_JToken, _router, _joe, _joetroller, _weth);
@@ -66,11 +62,11 @@ contract JoeFoSho is BaseStrategy {
     }
 
     function initialize(
-        address _vault, 
-        address _JToken, 
-        address _router, 
-        address _joe, 
-        address _joetroller, 
+        address _vault,
+        address _JToken,
+        address _router,
+        address _joe,
+        address _joetroller,
         address _weth
     ) external {
         _initialize(_vault, msg.sender, msg.sender, msg.sender);
@@ -78,10 +74,10 @@ contract JoeFoSho is BaseStrategy {
     }
 
     function _initializeThis(
-        address _JToken, 
-        address _router, 
-        address _joe, 
-        address _joetroller, 
+        address _JToken,
+        address _router,
+        address _joe,
+        address _joetroller,
         address _weth
     ) internal {
         JToken = IJToken(_JToken);
@@ -208,14 +204,13 @@ contract JoeFoSho is BaseStrategy {
         if (_amount == 0) {
             return 0;
         }
-        if(start == end){
+        if (start == end) {
             return _amount;
         }
 
         uint256[] memory amounts = currentRouter.getAmountsOut(_amount, getTokenOutPathV2(start, end));
 
         return amounts[amounts.length - 1];
-
     }
 
     /*****************
@@ -234,7 +229,7 @@ contract JoeFoSho is BaseStrategy {
 
         uint256 borrrowRate; // = JToken.borrowRatePerBlock();
 
-        uint256 supplyRate;// = JToken.supplyRatePerBlock();
+        uint256 supplyRate; // = JToken.supplyRatePerBlock();
 
         uint256 collateralisedDeposit = deposits.mul(collateralFactorMantissa).div(1e18);
 
@@ -303,7 +298,7 @@ contract JoeFoSho is BaseStrategy {
         deposits = JToken.balanceOfUnderlying(address(this));
 
         //we can use non state changing now because we updated state with balanceOfUnderlying call
-        borrows;// = JToken.borrowBalanceStored(address(this));
+        borrows; // = JToken.borrowBalanceStored(address(this));
     }
 
     //Same warning as above
@@ -411,7 +406,6 @@ contract JoeFoSho is BaseStrategy {
             }
             i++;
         }
-
     }
 
     /*************
@@ -428,7 +422,6 @@ contract JoeFoSho is BaseStrategy {
         //If there is no deficit we dont need to adjust position
         //if the position change is tiny do nothing
         if (deficit && position > minWant) {
-
             uint8 i = 0;
             //position will equal 0 unless we haven't been able to deleverage enough with flash loan
             //if we are not in deficit we dont need to do flash loan
@@ -588,7 +581,6 @@ contract JoeFoSho is BaseStrategy {
         }
 
         currentRouter.swapExactTokensForTokens(_joe, 0, getTokenOutPathV2(joe, address(want)), address(this), now);
-
     }
 
     function getTokenOutPathV2(address _tokenIn, address _tokenOut) internal view returns (address[] memory _path) {
@@ -634,7 +626,7 @@ contract JoeFoSho is BaseStrategy {
         if (borrowed == 0 && deficit) {
             return 0;
         }
-        if(lent == 0){
+        if (lent == 0) {
             JToken.mint(balanceOfToken(address(want)));
             (lent, borrowed) = getCurrentPosition();
         }

@@ -2,131 +2,64 @@
 // Feel free to change the license, but this is what we use
 
 // Feel free to change this version of Solidity. We support >=0.6.0 <0.7.0;
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
-// These are the core Yearn libraries
 // These are the core Yearn libraries
 import {BaseStrategy, StrategyParams} from "../BaseStrategy.sol";
 import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/math/Math.sol";
 
 // Import interfaces for many popular DeFi projects, or add your own!
-import "../interfaces/Uni/IUniswapV2Router02.sol";
-import "../interfaces/Stargate/IStargateRouter.sol";
 import "../interfaces/Stargate/IStargateGauge.sol";
+import "../interfaces/Stargate/IStargatePool.sol";
+import "../interfaces/Stargate/IStargateRouter.sol";
+import "../interfaces/Uni/IUniswapV2Router02.sol";
 
-interface IERC20Extended is IERC20 {
-    function decimals() external view returns (uint8);
-
-    function name() external view returns (string memory);
-
-    function symbol() external view returns (string memory);
-}
-
-contract Stargazer is BaseStrategy {
+contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
 
-    IUniswapV2Router02 uniRouter;
-    address starRouter;
-    address pool;
-    IStargateGauge guage;
-    address rewards;
-
-    address public constant btcCrv = address(0xf8a57c1d3b9629b77b6726a042ca48990A84Fb49);
-    address public constant wmatic = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
-    address public constant crv = address(0x172370d5Cd63279eFa6d502DAB29171933a610AF);
-    address public constant wbtc = address(0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6);
-
-    //address public constant SLPUSDT = address(0x29e38769f23701A2e4A8Ef0492e19dA4604Be62c)
-    address public constant usdc = address(0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174);
-    address public constant weth = address(0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619);
-
-    //address public constant slpUsdt = address(0x29e38769f23701A2e4A8Ef0492e19dA4604Be62c);
-    //address public constant stargateRouter = address(0x45A01E4e04F14f7A4a6702c74187c5F6222033cd); //call addLiquidity & approve this contract for unlimited USDT
-    //address public constant lpStaking = address(0x8731d54E9D02c286767d56ac03e8037C07e01e98); // approve for slpUSDT trade & deposit & withdrawl & claim rewards
-    //ICurveFi public pool; //address(0xC2d95EEF97Ec6C17551d45e77B590dc1F9117C67);
-    //IGauge public gauge; //address(0xffbACcE0CC7C19d46132f1258FC16CF6871D153c);
-
-    uint256 public maxSingleInvest = 200000000;
-    uint256 public slippageProtectionIn = 50; //out of 10000. 50 = 0.5%
-    uint256 public slippageProtectionOut = 50; //out of 10000. 50 = 0.5%
-    uint256 public constant DENOMINATOR = 10_000;
-
-    uint256 minWant;
-    uint256 want_decimals;
-    uint256 minCrv;
-    uint256 minWmatic;
-
-    // USED
-    uint256 totalDeposits;
-    uint256 pid;
+    IStargateGauge public gauge;
+    IStargatePool public pool;
+    IStargateRouter public starRouter;
+    IUniswapV2Router02 private currentRouter; //uni v2 forks only
+    address private tradingToken;
+    address private stg;
+    address private nativeToken;
+    uint16 private pid;
+    uint256 private minWant;
+    uint256 private minStgToSell;
+    uint256 private maxSingleInvest;
 
     constructor(
         address _vault,
-        address _pool,
-        address _gauge,
-        address _uniRouter,
-        address _starRouter,
-        address _rewards,
-        uint256 _pid
-    ) public BaseStrategy(_vault, _pool, _staking, _stargaterouter, _unirouter) {
-        _initialize(_vault, msg.sender, msg.sender, msg.sender);
-        _initializeThis(_pool, _staking, _uniRouter, _starRouter, _rewards, _pid);
-    }
-
-    function _initializeThis(
-        address _pool,
-        address _gauge,
-        address _uniRouter,
-        address _starRouter,
-        address _rewards,
-        uint256 _pid
-    ) internal {
-        setPool(_pool);
-        setGauge(_gauge);
-        uniRouter = IUniswapV2Router02(_router);
-        setStarRouter(_starRouter);
-        setRewards(_rewards);
-        setPid(_pid);
-
-        //want_decimals = IERC20Extended(address(want)).decimals();
-        //minWant = 10;
-        //minCrv = 1000000000000000;
-        //minWmatic = 1000000000000000;
-    }
-
-    function setStarRouter(address _router) internal {
-        IERC20(want).safeApprove(_router, type(uint256).max);
-
-        starRouter = address(_router);
-    }
-
-    function setPool(address _pool) internal {
-        //IERC20(_pool).safeApprove(_router, type(uint256).max);
-        pool = address(_pool);
-    }
-
-    function setGauge(address _gauge) internal {
-        //approve gauge
-        IERC20(pool).approve(_gauge, type(uint256).max);
-
-        gauge = IStargateGauge(_gauge);
-    }
-
-    function setRewards(address _rewards) internal {
-        //approve rewards for trade on uniRouter
-        IERC20(_rewards).approve(uniRouter, type(uint256).max);
-
-        rewards = address(_rewards);
-    }
-
-    function setPid(uint256 _pid) internal {
-        //Set pool ID for Stargate router
-
+        IStargateGauge _gauge,
+        IStargatePool _pool,
+        IStargateRouter _starRouter,
+        IUniswapV2Router02 _currentRouter,
+        address _tradingToken,
+        address _nativeToken,
+        address _stg,
+        uint16 _pid
+    ) public BaseStrategy(_vault) {
+        // You can set these parameters on deployment to whatever you want
+        // maxReportDelay = 6300;
+        // profitFactor = 100;
+        // debtThreshold = 0;
+        // TODO: approvals for these
+        gauge = _gauge;
+        pool = _pool;
+        starRouter = _starRouter;
+        currentRouter = _currentRouter;
+        tradingToken = _tradingToken;
+        nativeToken = _nativeToken;
+        stg = _stg;
         pid = _pid;
+        minWant = 0; // TODO: set minWant
+        maxSingleInvest = 100000000000000000000; // TODO: set maxSingleInvest
+        minStgToSell = 0;
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -136,73 +69,58 @@ contract Stargazer is BaseStrategy {
         return "Stargazer";
     }
 
+    /*
+    struct UserInfo {
+        uint256 amount; // How many LP tokens the user has provided.
+        uint256 rewardDebt; // Reward debt. See explanation below.
+    }
+    */
+
+    function getGaugeBalanceInWant() internal returns (uint256) {
+        (uint256 _amount, uint256 _rewardDebt) = gauge.userInfo(pid, address(this));
+        uint256 lp = _amount;
+        return pool.amountLPtoLD(lp);
+    }
+
+    //sell joe function
     function balanceOfToken(address _token) public view returns (uint256) {
         return IERC20(_token).balanceOf(address(this));
     }
 
-    /*
-    function toWant(uint256 _lpBalance) public view returns (uint256) {
-        return _lpBalance.mul(pool.get_virtual_price()).div(1e28);
-    }
-    */
-
-    /*
-    function toShares(uint256 _wantAmount) public view returns (uint256) {
-        //lpAmount = (UnderlyingAmount * 1e(18 + (18 - UInderlyingDecimals))) / virtualPrice
-        return _wantAmount.mul(1e28).div(pool.get_virtual_price());
-    }
-    */
-
-    function totalDepositedWant() public view returns (uint256) {
-        return totalDeposits;
-    }
-
-    function lpBalance() public view returns (uint256) {
-        return gauge.balanceOf(address(this)).add(balanceOfToken(pool));
-    }
-
     function estimatedTotalAssets() public view override returns (uint256) {
-        uint256 wantBalance = balanceOfToken(address(want));
-
-        //uint256 rewards = estimatedRewards();
-
-        uint256 poolBalance = totalDepositedWant();
-
-        return wantBalance.add(poolBalance);
+        uint256 bal = getGaugeBalanceInWant();
+        return bal.add(balanceOfToken(address(want)));
     }
 
-    /*
-    //estimate is based off accrued rewards from the last time the account was touched
-    function estimatedRewards() public view returns (uint256) {
-        uint256 crvWant = _checkPrice(crv, address(want), balanceOfToken(crv).add(predictCrvAccrued()));
-        uint256 wmaticWant = _checkPrice(wmatic, address(want), balanceOfToken(wmatic).add(predictWmaticAccrued()));
+    function getTokenOutPathV2(address _tokenIn, address _tokenOut) internal view returns (address[] memory _path) {
+        // expect stg in, tokenOut make not be liquid trading partner. max path size is 3.
 
-        uint256 _bal = crvWant.add(wmaticWant);
+        bool isLiquid = _tokenOut == tradingToken;
+        _path = new address[](isLiquid ? 2 : 3);
+        _path[0] = _tokenIn;
 
-        //call it 90% for safety sake
-        return _bal.mul(90).div(100);
-    }
-    
-
-    function predictCrvAccrued() public view returns (uint256) {
-        return gauge.claimable_reward(address(this), crv);
-    }
-
-    function predictWmaticAccrued() public view returns (uint256) {
-        return gauge.claimable_reward(address(this), wmatic);
-    }
-    */
-
-    //predicts our profit at next report
-    function expectedReturn() public view returns (uint256) {
-        uint256 estimateAssets = estimatedTotalAssets();
-
-        uint256 debt = vault.strategies(address(this)).totalDebt;
-        if (debt > estimateAssets) {
-            return 0;
+        if (isLiquid) {
+            _path[1] = tradingToken;
         } else {
-            return estimateAssets.sub(debt);
+            _path[1] = tradingToken;
+            _path[2] = _tokenOut;
         }
+    }
+
+    function _disposeOfStg() internal {
+        uint256 _stg = balanceOfToken(stg);
+        if (_stg < minStgToSell) {
+            return;
+        }
+
+        currentRouter.swapExactTokensForTokens(_stg, 0, getTokenOutPathV2(stg, address(want)), address(this), now);
+    }
+
+    function harvester() public {
+        // claim STG
+        gauge.deposit(pid, 0);
+
+        _disposeOfStg();
     }
 
     function prepareReturn(uint256 _debtOutstanding)
@@ -222,9 +140,9 @@ contract Stargazer is BaseStrategy {
         harvester();
 
         //get base want balance
-        uint256 wantBalance = balanceOfToken(address(want));
+        uint256 wantBalance = want.balanceOf(address(this));
 
-        uint256 balance = wantBalance.add(toWant(lpBalance()));
+        uint256 balance = estimatedTotalAssets();
 
         //get amount given to strat by vault
         uint256 debt = vault.strategies(address(this)).totalDebt;
@@ -259,8 +177,6 @@ contract Stargazer is BaseStrategy {
                 _debtPayment = _debtOutstanding;
             }
         } else {
-            //we will lose money until we claim comp then we will make money
-            //this has an unintended side effect of slowly lowering our total debt allowed
             _loss = debt.sub(balance);
             if (_debtOutstanding > wantBalance) {
                 withdrawSome(_debtOutstanding.sub(wantBalance));
@@ -269,6 +185,27 @@ contract Stargazer is BaseStrategy {
 
             _debtPayment = Math.min(wantBalance, _debtOutstanding);
         }
+    }
+
+    function withdrawSome(uint256 _amount) internal {
+        if (_amount < minWant) {
+            return;
+        }
+
+        // Decimals of _amount token must be 6 eg USDC/USDT
+        uint256 price = pool.amountLPtoLD(100000);
+        uint256 cost = _amount.div(price);
+
+        gauge.withdraw(pid, cost);
+        starRouter.instantRedeemLocal(pid, cost, address(this));
+    }
+
+    function depositSome(uint256 _amount) internal {
+        if (_amount < minWant) {
+            return;
+        }
+
+        gauge.deposit(pid, _amount);
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -280,7 +217,6 @@ contract Stargazer is BaseStrategy {
         uint256 _wantBal = balanceOfToken(address(want));
         if (_wantBal < _debtOutstanding) {
             withdrawSome(_debtOutstanding.sub(_wantBal));
-
             return;
         }
 
@@ -293,192 +229,90 @@ contract Stargazer is BaseStrategy {
     }
 
     function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _liquidatedAmount, uint256 _loss) {
+        // TODO: Do stuff here to free up to `_amountNeeded` from all positions back into `want`
         // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
         // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
-        uint256 wantBalance = balanceOfToken(address(want));
-        if (wantBalance > _amountNeeded) {
-            // if there is enough free want, let's use it
-            return (_amountNeeded, 0);
+
+        uint256 totalAssets = want.balanceOf(address(this));
+        if (_amountNeeded > totalAssets) {
+            _liquidatedAmount = totalAssets;
+            _loss = _amountNeeded.sub(totalAssets);
         }
-
-        // we need to free funds
-        uint256 amountRequired = _amountNeeded.sub(wantBalance);
-        withdrawSome(amountRequired);
-
-        uint256 freeAssets = balanceOfToken(address(want));
-        if (_amountNeeded > freeAssets) {
-            _liquidatedAmount = freeAssets;
-            uint256 diff = _amountNeeded.sub(_liquidatedAmount);
-            if (diff <= minWant) {
-                _loss = diff;
-            }
-        } else {
-            _liquidatedAmount = _amountNeeded;
-        }
-    }
-
-    function depositSome(uint256 _amount) internal {
-        if (_amount < minWant) {
-            return;
-        }
-
-        uint256 expectedOut = toShares(_amount);
-
-        uint256 maxSlip = expectedOut.mul(DENOMINATOR.sub(slippageProtectionIn)).div(DENOMINATOR);
-
-        uint256[2] memory amounts;
-        amounts[0] = _amount;
-
-        pool.add_liquidity(amounts, maxSlip, true);
-
-        gauge.deposit(balanceOfToken(btcCrv));
-    }
-
-    function withdrawSome(uint256 _amount) internal {
-        if (_amount < minWant) {
-            return;
-        }
-
-        //let's take the amount we need if virtual price is real.
-        uint256 amountNeeded = toShares(_amount);
-
-        if (amountNeeded > gauge.balanceOf(address(this))) {
-            harvester();
-            amountNeeded = gauge.balanceOf(address(this));
-        }
-
-        gauge.withdraw(amountNeeded);
-
-        uint256 toWithdraw = balanceOfToken(btcCrv);
-
-        //if we have less than 18 decimals we need to lower the amount out
-        uint256 maxSlippage = toWithdraw.mul(DENOMINATOR.sub(slippageProtectionOut)).div(DENOMINATOR);
-        if (want_decimals < 18) {
-            maxSlippage = maxSlippage.div(10**(uint256(uint8(18) - want_decimals)));
-        }
-
-        pool.remove_liquidity_one_coin(toWithdraw, 0, maxSlippage, true);
-    }
-
-    function harvester() internal {
-        // claim STG
-        gauge.deposit(pid, 0);
-
-        disposeStg();
-    }
-
-    function disposeStg() internal {
-        uint256 _crv = balanceOfToken(crv);
-        if (_crv < minCrv) {
-            return;
-        }
-
-        _swapFrom(crv, address(want), _crv);
-    }
-
-    //WARNING. manipulatable and simple routing. Only use for safe functions
-    function _checkPrice(
-        address start,
-        address end,
-        uint256 _amount
-    ) internal view returns (uint256) {
-        if (_amount == 0) {
-            return 0;
-        }
-
-        //uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
-        uint256[] memory amounts = router.getAmountsOut(_amount, getTokenOutPath(start, end));
-
-        return amounts[amounts.length - 1];
-    }
-
-    //need to go from PTP to AVAX to USDC.e
-    function _swapFromWithAmount(
-        address _from,
-        address _to,
-        uint256 _amountIn,
-        uint256 _amountOut
-    ) internal returns (uint256) {
-        IERC20(_from).approve(address(router), _amountIn);
-
-        uint256[] memory amounts = router.swapExactTokensForTokens(
-            _amountIn,
-            _amountOut,
-            getTokenOutPath(_from, _to),
-            address(this),
-            block.timestamp
-        );
-
-        return amounts[amounts.length - 1];
-    }
-
-    function _swapFrom(
-        address _from,
-        address _to,
-        uint256 _amountIn
-    ) internal returns (uint256) {
-        uint256 amountOut = _checkPrice(_from, _to, _amountIn);
-
-        return _swapFromWithAmount(_from, _to, _amountIn, amountOut);
-    }
-
-    function getTokenOutPath(address _tokenIn, address _tokenOut) internal view returns (address[] memory _path) {
-        bool isAvax = _tokenIn == wmatic || _tokenOut == wmatic;
-        _path = new address[](isAvax ? 2 : 3);
-        _path[0] = _tokenIn;
-
-        if (isAvax) {
-            _path[1] = _tokenOut;
-        } else {
-            _path[1] = wmatic;
-            _path[2] = _tokenOut;
+        _liquidatedAmount = _amountNeeded;
+        if (_liquidatedAmount > 0) {
+            withdrawSome(_liquidatedAmount);
         }
     }
 
     function liquidateAllPositions() internal override returns (uint256) {
-        gauge.withdraw(gauge.balanceOf(address(this)), true);
-        disposeCrv();
-        disposeWmatic();
-        pool.remove_liquidity_one_coin(balanceOfToken(btcCrv), 0, 0, true);
+        // TODO: Liquidate all positions and return the amount freed.
+        harvester();
+        uint256 balance = getGaugeBalanceInWant();
+        withdrawSome(balance);
+        return want.balanceOf(address(this));
     }
+
+    // NOTE: Can override `tendTrigger` and `harvestTrigger` if necessary
 
     function prepareMigration(address _newStrategy) internal override {
-        gauge.withdraw(gauge.balanceOf(address(this)), true);
-        uint256 _crvB = balanceOfToken(crv);
-        if (_crvB > 0) {
-            IERC20(crv).safeTransfer(_newStrategy, _crvB);
-        }
-        uint256 _wmaticB = balanceOfToken(wmatic);
-        if (_wmaticB > 0) {
-            IERC20(wmatic).safeTransfer(_newStrategy, _wmaticB);
-        }
-
-        IERC20(btcCrv).transfer(_newStrategy, balanceOfToken(btcCrv));
+        // TODO: Transfer any non-`want` tokens to the new strategy
+        // NOTE: `migrate` will automatically forward all `want` in this strategy to the new one
     }
 
+    // Override this to add all tokens/tokenized positions this contract manages
+    // on a *persistent* basis (e.g. not just for swapping back to want ephemerally)
+    // NOTE: Do *not* include `want`, already included in `sweep` below
+    //
+    // Example:
+    //
+    //    function protectedTokens() internal override view returns (address[] memory) {
+    //      address[] memory protected = new address[](3);
+    //      protected[0] = tokenA;
+    //      protected[1] = tokenB;
+    //      protected[2] = tokenC;
+    //      return protected;
+    //    }
     function protectedTokens() internal view override returns (address[] memory) {
         address[] memory protected = new address[](3);
-        protected[0] = btcCrv;
-        protected[1] = crv;
-        protected[2] = wmatic;
-
-        return protected;
+        protected[0] = address(pool);
+        protected[1] = address(stg);
+        //      return protected;
     }
 
+    function priceCheck(
+        address start,
+        address end,
+        uint256 _amount
+    ) public view returns (uint256) {
+        if (_amount == 0) {
+            return 0;
+        }
+        if (start == end) {
+            return _amount;
+        }
+
+        uint256[] memory amounts = currentRouter.getAmountsOut(_amount, getTokenOutPathV2(start, end));
+
+        return amounts[amounts.length - 1];
+    }
+
+    /**
+     * @notice
+     *  Provide an accurate conversion from `_amtInWei` (denominated in wei)
+     *  to `want` (using the native decimal characteristics of `want`).
+     * @dev
+     *  Care must be taken when working with decimals to assure that the conversion
+     *  is compatible. As an example:
+     *
+     *      given 1e17 wei (0.1 ETH) as input, and want is USDC (6 decimals),
+     *      with USDC/ETH = 1800, this should give back 1800000000 (180 USDC)
+     *
+     * @param _amtInWei The amount (in wei/1e-18 ETH) to convert to `want`
+     * @return The amount in `want` of `_amtInEth` converted to `want`
+     **/
     function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
-        return _checkPrice(wmatic, address(want), _amtInWei);
-    }
-
-    //manual withdraw incase needed
-    //Decimal issue wont withdraw any funds unles greater than 1000000000 == 1 wbtc
-    function manualWithdraw(uint256 _amount) external onlyStrategist {
-        pool.remove_liquidity_one_coin(_amount, 0, 1, true);
-    }
-
-    //Decimal issue is not wihtdrawaling any funds 1000000000 == 1 wbtc
-
-    //manual withdraw incase needed
-    function manualUnstake(uint256 _amount) external onlyStrategist {
-        gauge.withdraw(_amount);
+        // TODO create an accurate price oracle
+        return priceCheck(nativeToken, address(want), _amtInWei);
+        return _amtInWei;
     }
 }
