@@ -2,6 +2,7 @@
 import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 pragma solidity ^0.6.12;
+pragma experimental ABIEncoderV2;
 
 interface IStargateGauge {
     struct UserInfo {
@@ -26,6 +27,8 @@ interface IStargateGauge {
         uint256 lastRewardBlock; // Last block number that STGs distribution occurs.
         uint256 accStargatePerShare; // Accumulated STGs per share, times 1e12. See below.
     }
+
+    /*
     // The STG TOKEN!
     address public stargate;
     // Block number when bonus STG period ends.
@@ -40,11 +43,15 @@ interface IStargateGauge {
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
-    mapping(uint256 => mapping(address => UserInfo)) public userInfo;
+
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
     // The block number when STG mining starts.
     uint256 public startBlock;
+    */
+    //mapping(uint256 => mapping(address => UserInfo)) public userInfo;
+
+    function userInfo(uint256, address) external view returns (uint256, uint256);
 
     function deposit(uint256 _pid, uint256 _amount) external;
 

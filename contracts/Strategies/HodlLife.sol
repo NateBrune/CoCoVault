@@ -402,14 +402,14 @@ contract HodlLife is BaseStrategy {
     }
 
     function liquidateAllPositions() internal override returns (uint256) {
-        gauge.withdraw(gauge.balanceOf(address(this)), true);
+        gauge.withdraw(gauge.balanceOf(address(this)));
         disposeCrv();
         disposeWmatic();
         pool.remove_liquidity_one_coin(balanceOfToken(btcCrv), 0, 0, true);
     }
 
     function prepareMigration(address _newStrategy) internal override {
-        gauge.withdraw(gauge.balanceOf(address(this)), true);
+        gauge.withdraw(gauge.balanceOf(address(this)));
         uint256 _crvB = balanceOfToken(crv);
         if (_crvB > 0) {
             IERC20(crv).safeTransfer(_newStrategy, _crvB);

@@ -16,7 +16,7 @@ import "../interfaces/Stargate/IStargatePool.sol";
 import "../interfaces/Stargate/IStargateRouter.sol";
 import "../interfaces/Uni/IUniswapV2Router02.sol";
 
-contract Strategy is BaseStrategy {
+contract Stargazer is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
@@ -59,7 +59,7 @@ contract Strategy is BaseStrategy {
         pid = _pid;
         minWant = 0; // TODO: set minWant
         maxSingleInvest = 100000000000000000000; // TODO: set maxSingleInvest
-        minStgToSell = 0;
+        minStgToSell = 1;
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -69,15 +69,16 @@ contract Strategy is BaseStrategy {
         return "Stargazer";
     }
 
-    /*
     struct UserInfo {
         uint256 amount; // How many LP tokens the user has provided.
         uint256 rewardDebt; // Reward debt. See explanation below.
     }
-    */
 
-    function getGaugeBalanceInWant() internal returns (uint256) {
+    function getGaugeBalanceInWant() internal view returns (uint256) {
+        //mapping(address => UserInfo) storage info = gauge.userInfo[pid];
+
         (uint256 _amount, uint256 _rewardDebt) = gauge.userInfo(pid, address(this));
+        //(uint256 _amount, uint256 _rewardDebt) = info[address];
         uint256 lp = _amount;
         return pool.amountLPtoLD(lp);
     }
@@ -89,6 +90,8 @@ contract Strategy is BaseStrategy {
 
     function estimatedTotalAssets() public view override returns (uint256) {
         uint256 bal = getGaugeBalanceInWant();
+        //uint256 vault_bal = want.balanceOf(address(vault));
+        //uint256 total = bal.add(vault_bal);
         return bal.add(balanceOfToken(address(want)));
     }
 
@@ -108,12 +111,12 @@ contract Strategy is BaseStrategy {
     }
 
     function _disposeOfStg() internal {
-        uint256 _stg = balanceOfToken(stg);
-        if (_stg < minStgToSell) {
+        uint256 _amountIn = balanceOfToken(stg);
+        if (_amountIn < minStgToSell) {
             return;
         }
-
-        currentRouter.swapExactTokensForTokens(_stg, 0, getTokenOutPathV2(stg, address(want)), address(this), now);
+        IERC20(stg).approve(address(currentRouter), _amountIn);
+        currentRouter.swapExactTokensForTokens(_amountIn, 0, getTokenOutPathV2(stg, address(want)), address(this), now);
     }
 
     function harvester() public {
@@ -197,6 +200,8 @@ contract Strategy is BaseStrategy {
         uint256 cost = _amount.div(price);
 
         gauge.withdraw(pid, cost);
+        uint256 bal = pool.balanceOf(address(this));
+        pool.approve(address(starRouter), bal);
         starRouter.instantRedeemLocal(pid, cost, address(this));
     }
 
@@ -204,8 +209,11 @@ contract Strategy is BaseStrategy {
         if (_amount < minWant) {
             return;
         }
-
-        gauge.deposit(pid, _amount);
+        IERC20(tradingToken).approve(address(starRouter), _amount);
+        starRouter.addLiquidity(pid, _amount, address(this));
+        uint256 bal = pool.balanceOf(address(this));
+        pool.approve(address(gauge), bal);
+        gauge.deposit(pid, bal);
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -221,6 +229,7 @@ contract Strategy is BaseStrategy {
         }
 
         // send all of our want tokens to be deposited
+        //uint256 newDebt = _debtOutstanding.div((10**12));
         uint256 toInvest = _wantBal.sub(_debtOutstanding);
 
         uint256 _wantToInvest = Math.min(toInvest, maxSingleInvest);
@@ -313,6 +322,6 @@ contract Strategy is BaseStrategy {
     function ethToWant(uint256 _amtInWei) public view virtual override returns (uint256) {
         // TODO create an accurate price oracle
         return priceCheck(nativeToken, address(want), _amtInWei);
-        return _amtInWei;
+        //return _amtInWei;
     }
 }
