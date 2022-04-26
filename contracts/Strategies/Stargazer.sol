@@ -57,9 +57,9 @@ contract Stargazer is BaseStrategy {
         nativeToken = _nativeToken;
         stg = _stg;
         pid = _pid;
-        minWant = 0; // TODO: set minWant
+        minWant = 1; // TODO: set minWant
         maxSingleInvest = 100000000000000000000; // TODO: set maxSingleInvest
-        minStgToSell = 1;
+        minStgToSell = 1000000000000;
     }
 
     // ******** OVERRIDE THESE METHODS FROM BASE CONTRACT ************
@@ -77,7 +77,7 @@ contract Stargazer is BaseStrategy {
     function getGaugeBalanceInWant() internal view returns (uint256) {
         //mapping(address => UserInfo) storage info = gauge.userInfo[pid];
 
-        (uint256 _amount, uint256 _rewardDebt) = gauge.userInfo(pid, address(this));
+        (uint256 _amount, uint256 _rewardDebt) = gauge.userInfo(pid - 1, address(this));
         //(uint256 _amount, uint256 _rewardDebt) = info[address];
         uint256 lp = _amount;
         return pool.amountLPtoLD(lp);
@@ -121,7 +121,7 @@ contract Stargazer is BaseStrategy {
 
     function harvester() public {
         // claim STG
-        gauge.deposit(pid, 0);
+        gauge.deposit(pid - 1, 0);
 
         _disposeOfStg();
     }
@@ -161,8 +161,7 @@ contract Stargazer is BaseStrategy {
 
             uint256 needed = _profit.add(_debtOutstanding);
             if (needed > wantBalance) {
-                needed = needed.sub(wantBalance);
-                withdrawSome(needed);
+                withdrawSome(needed.sub(wantBalance));
 
                 wantBalance = balanceOfToken(address(want));
 
@@ -194,15 +193,31 @@ contract Stargazer is BaseStrategy {
         if (_amount < minWant) {
             return;
         }
+        uint256 deposited = getGaugeBalanceInWant();
+        if (deposited == 0) {
+            return;
+        }
 
         // Decimals of _amount token must be 6 eg USDC/USDT
-        uint256 price = pool.amountLPtoLD(100000);
-        uint256 cost = _amount.div(price);
+        uint256 price = pool.amountLPtoLD(1000000);
+        uint256 multiplied_amount = _amount.mul(1000000);
+        uint256 cost = multiplied_amount.div(price);
+        cost = cost.sub(100); // TODO: determine if this can be lower
 
-        gauge.withdraw(pid, cost);
+        gauge.withdraw(pid - 1, cost);
         uint256 bal = pool.balanceOf(address(this));
         pool.approve(address(starRouter), bal);
-        starRouter.instantRedeemLocal(pid, cost, address(this));
+        starRouter.instantRedeemLocal(pid, bal, address(this));
+    }
+
+    function withdrawDebug(uint256 _amount) public {
+        //TODO: REMOVE
+        withdrawSome(_amount);
+    }
+
+    function depositDebug(uint256 _amount) public {
+        //TODO: REMOVE
+        depositSome(_amount);
     }
 
     function depositSome(uint256 _amount) internal {
@@ -213,7 +228,9 @@ contract Stargazer is BaseStrategy {
         starRouter.addLiquidity(pid, _amount, address(this));
         uint256 bal = pool.balanceOf(address(this));
         pool.approve(address(gauge), bal);
-        gauge.deposit(pid, bal);
+        // PID should be 0 for deposit USDC on AVAX idk why??? is it always pid-1?
+        require(pid > 0, "Invalid PID");
+        gauge.deposit(pid - 1, bal);
     }
 
     function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -221,8 +238,12 @@ contract Stargazer is BaseStrategy {
             return;
         }
 
-        //we are spending all our cash unless we have debt outstanding
         uint256 _wantBal = balanceOfToken(address(want));
+        if (_wantBal == 0) {
+            return;
+        }
+
+        //we are spending all our cash unless we have debt outstanding
         if (_wantBal < _debtOutstanding) {
             withdrawSome(_debtOutstanding.sub(_wantBal));
             return;
@@ -242,22 +263,31 @@ contract Stargazer is BaseStrategy {
         // NOTE: Maintain invariant `want.balanceOf(this) >= _liquidatedAmount`
         // NOTE: Maintain invariant `_liquidatedAmount + _loss <= _amountNeeded`
 
-        uint256 totalAssets = want.balanceOf(address(this));
+        uint256 totalAssets = estimatedTotalAssets();
         if (_amountNeeded > totalAssets) {
             _liquidatedAmount = totalAssets;
             _loss = _amountNeeded.sub(totalAssets);
         }
         _liquidatedAmount = _amountNeeded;
         if (_liquidatedAmount > 0) {
-            withdrawSome(_liquidatedAmount);
+            withdrawSome(_liquidatedAmount); // TODO: withdrawSome not liquidating liquidatedAmount
         }
+        // require(balanceOfToken(address(want)) >= _liquidatedAmount, "liquidation failed");
+        //_liquidatedAmount = balanceOfToken(address(want));
+
+        // TODO: figure out why _liquidatedAmount != _amountNeeded
+        //if (_liquidatedAmount != _amountNeeded) {
+        //    _loss = _amountNeeded.sub(_liquidatedAmount); // this isn't even lost
+        //}
     }
 
     function liquidateAllPositions() internal override returns (uint256) {
         // TODO: Liquidate all positions and return the amount freed.
         harvester();
         uint256 balance = getGaugeBalanceInWant();
-        withdrawSome(balance);
+        if (balance > 0) {
+            withdrawSome(balance);
+        }
         return want.balanceOf(address(this));
     }
 
