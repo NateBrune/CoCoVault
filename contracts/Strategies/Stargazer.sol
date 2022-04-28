@@ -202,22 +202,12 @@ contract Stargazer is BaseStrategy {
         uint256 price = pool.amountLPtoLD(1000000);
         uint256 multiplied_amount = _amount.mul(1000000);
         uint256 cost = multiplied_amount.div(price);
-        cost = cost.sub(100); // TODO: determine if this can be lower
+        cost = cost.sub(1); // TODO: determine if this can be lower
 
         gauge.withdraw(pid - 1, cost);
         uint256 bal = pool.balanceOf(address(this));
         pool.approve(address(starRouter), bal);
         starRouter.instantRedeemLocal(pid, bal, address(this));
-    }
-
-    function withdrawDebug(uint256 _amount) public {
-        //TODO: REMOVE
-        withdrawSome(_amount);
-    }
-
-    function depositDebug(uint256 _amount) public {
-        //TODO: REMOVE
-        depositSome(_amount);
     }
 
     function depositSome(uint256 _amount) internal {
@@ -268,12 +258,13 @@ contract Stargazer is BaseStrategy {
             _liquidatedAmount = totalAssets;
             _loss = _amountNeeded.sub(totalAssets);
         }
+
         _liquidatedAmount = _amountNeeded;
         if (_liquidatedAmount > 0) {
             withdrawSome(_liquidatedAmount); // TODO: withdrawSome not liquidating liquidatedAmount
         }
         // require(balanceOfToken(address(want)) >= _liquidatedAmount, "liquidation failed");
-        //_liquidatedAmount = balanceOfToken(address(want));
+        _liquidatedAmount = balanceOfToken(address(want));
 
         // TODO: figure out why _liquidatedAmount != _amountNeeded
         //if (_liquidatedAmount != _amountNeeded) {
